@@ -1,0 +1,114 @@
+
+version: "3.9"
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-socialwatch}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-socialwatch}
+      POSTGRES_DB: ${POSTGRES_DB:-socialwatch}
+    volumes: [ "pgdata:/var/lib/postgresql/data" ]
+    ports: [ "5432:5432" ]
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    ports: [ "6379:6379" ]
+    restart: unless-stopped
+
+  opensearch:
+    image: opensearchproject/opensearch:2.14.0
+    environment:
+      - discovery.type=single-node
+      - plugins.security.disabled=true
+      - OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m
+    ports: [ "9200:9200" ]
+    restart: unless-stopped
+
+  dashboards:
+    image: opensearchproject/opensearch-dashboards:2.14.0
+    environment:
+      - OPENSEARCH_HOSTS=http://opensearch:9200
+      - OPENSEARCH_SECURITY_ENABLED=false
+    ports: [ "5601:5601" ]
+    depends_on: [ opensearch ]
+    restart: unless-stopped
+
+  api:
+    build: ./server
+    env_file: .env
+    environment:
+      - PORT=${API_PORT:-4000}
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=${REDIS_URL}
+      - OPENSEARCH_URL=${OPENSEARCH_URL}
+      - WEB_ORIGIN=${WEB_ORIGIN}
+      - JWT_SECRET=${JWT_SECRET}
+      - ACCESS_TTL_MIN=${ACCESS_TTL_MIN}
+      - REFRESH_TTL_DAYS=${REFRESH_TTL_DAYS}
+      - ADMIN_EMAIL=${ADMIN_EMAIL}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
+      - ADMIN_NAME=${ADMIN_NAME}
+      - SMTP_HOST=${SMTP_HOST}
+      - SMTP_PORT=${SMTP_PORT}
+      - SMTP_SECURE=${SMTP_SECURE}
+      - SMTP_USER=${SMTP_USER}
+      - SMTP_PASS=${SMTP_PASS}
+      - ALERT_FROM=${ALERT_FROM}
+      - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL}
+      - IG_USER_TOKEN=${IG_USER_TOKEN}
+      - IG_BUSINESS_ID=${IG_BUSINESS_ID}
+      - IG_HASHTAGS=${IG_HASHTAGS}
+      - FB_PAGE_ACCESS_TOKENS=${FB_PAGE_ACCESS_TOKENS}
+      - X_BEARER_TOKEN=${X_BEARER_TOKEN}
+      - X_QUERY=${X_QUERY}
+    depends_on: [ postgres, redis, opensearch ]
+    ports: [ "${API_PORT:-4000}:4000" ]
+    restart: unless-stopped
+
+  worker_ingest:
+    build: ./server
+    env_file: .env
+    environment:
+      - WORKER=scheduler
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=${REDIS_URL}
+      - OPENSEARCH_URL=${OPENSEARCH_URL}
+      - IG_USER_TOKEN=${IG_USER_TOKEN}
+      - IG_BUSINESS_ID=${IG_BUSINESS_ID}
+      - IG_HASHTAGS=${IG_HASHTAGS}
+      - FB_PAGE_ACCESS_TOKENS=${FB_PAGE_ACCESS_TOKENS}
+      - X_BEARER_TOKEN=${X_BEARER_TOKEN}
+      - X_QUERY=${X_QUERY}
+    command: ["node","workers/scheduler.js"]
+    depends_on: [ postgres, redis, opensearch ]
+    restart: unless-stopped
+
+  worker_alerts:
+    build: ./server
+    env_file: .env
+    environment:
+      - WORKER=alerter
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=${REDIS_URL}
+      - OPENSEARCH_URL=${OPENSEARCH_URL}
+      - SMTP_HOST=${SMTP_HOST}
+      - SMTP_PORT=${SMTP_PORT}
+      - SMTP_SECURE=${SMTP_SECURE}
+      - SMTP_USER=${SMTP_USER}
+      - SMTP_PASS=${SMTP_PASS}
+      - ALERT_FROM=${ALERT_FROM}
+      - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL}
+    command: ["node","workers/alerter.js"]
+    depends_on: [ postgres, redis ]
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ./web
+      args: [ "API_URL=http://localhost:${API_PORT:-4000}" ]
+    ports: [ "${WEB_PORT:-5173}:80" ]
+    depends_on: [ api ]
+    restart: unless-stopped
+
+volumes: { pgdata: {} }

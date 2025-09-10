@@ -1,0 +1,120 @@
+
+generator client { provider = "prisma-client-js" }
+datasource db { provider = "postgresql"; url = env("DATABASE_URL") }
+
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  passwordHash  String
+  name          String?
+  role          Role     @default(viewer)
+  createdAt     DateTime @default(now())
+  savedQueries  SavedQuery[]
+  refreshTokens RefreshToken[]
+}
+
+model RefreshToken {
+  id              String   @id @default(cuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id])
+  tokenHash       String
+  expiresAt       DateTime
+  revokedAt       DateTime?
+  replacedByToken String?
+  createdAt       DateTime @default(now())
+  @@index([userId])
+}
+
+model SavedQuery {
+  id        String   @id @default(cuid())
+  name      String
+  query     String
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  createdAt DateTime @default(now())
+}
+
+model SourceConf {
+  id        String   @id @default(cuid())
+  type      Source
+  name      String
+  config    Json
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+}
+
+model AlertRule {
+  id            String          @id @default(cuid())
+  name          String
+  query         String?
+  sources       Source[]
+  sentiment     SentimentLabel?
+  windowMinutes Int             @default(60)
+  threshold     Int             @default(20)
+  channel       AlertChannel    @default(slack)
+  target        String?
+  active        Boolean         @default(true)
+  createdById   String?
+  createdAt     DateTime        @default(now())
+}
+
+model AlertEvent {
+  id        String   @id @default(cuid())
+  ruleId    String
+  ruleName  String
+  firedAt   DateTime @default(now())
+  count     Int
+  details   Json?
+}
+
+model Post {
+  id            String   @id @default(cuid())
+  source        Source
+  externalId    String?  @unique
+  author        String?
+  text          String
+  lang          String?  @default("id")
+  createdAt     DateTime
+  fetchedAt     DateTime @default(now())
+  likeCount     Int      @default(0)
+  commentCount  Int      @default(0)
+  shareCount    Int      @default(0)
+  url           String?
+  sentiment     Sentiment? @relation(fields: [sentimentId], references: [id])
+  sentimentId   String?
+  keywords      KeywordOnPost[]
+  @@index([createdAt])
+  @@index([source])
+  @@fulltext([text])
+}
+
+model Sentiment {
+  id        String   @id @default(cuid())
+  label     SentimentLabel
+  score     Float
+  post      Post     @relation(fields: [postId], references: [id])
+  postId    String   @unique
+  createdAt DateTime @default(now())
+  @@index([label])
+}
+
+model Keyword {
+  id     String  @id @default(cuid())
+  token  String  @unique
+  posts  KeywordOnPost[]
+  @@index([token])
+}
+
+model KeywordOnPost {
+  postId    String
+  keywordId String
+  count     Int     @default(1)
+  post      Post    @relation(fields: [postId], references: [id])
+  keyword   Keyword @relation(fields: [keywordId], references: [id])
+  @@id([postId, keywordId])
+}
+
+enum Source { instagram facebook twitter }
+enum SentimentLabel { positive negative neutral }
+enum Role { admin analyst viewer }
+enum AlertChannel { slack email }
